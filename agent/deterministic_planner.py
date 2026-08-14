@@ -42,7 +42,24 @@ class DeterministicPlanner:
             )
 
         # --------------------------------------------------
-        # 3. Find Einstein quote element
+        # 3. Check whether extraction already succeeded
+        # --------------------------------------------------
+
+        for record in reversed(history):
+
+            if (
+                record.action.action == "extract_text"
+                and record.result
+                and record.result != "failure"
+            ):
+
+                return BrowserAction(
+                    action="done",
+                    text=record.result,
+                )
+
+        # --------------------------------------------------
+        # 4. Find Einstein quote element
         # --------------------------------------------------
 
         for element in state.elements:
@@ -52,24 +69,6 @@ class DeterministicPlanner:
                 return BrowserAction(
                     action="extract_text",
                     element_id=element.id,
-                )
-
-        # --------------------------------------------------
-        # 4. After extraction, finish
-        # --------------------------------------------------
-
-        for record in reversed(history):
-
-            if (
-                record.action.action
-                == "extract_text"
-                and record.result
-                and record.result != "failure"
-            ):
-
-                return BrowserAction(
-                    action="done",
-                    text=record.result,
                 )
 
         # --------------------------------------------------
@@ -91,12 +90,20 @@ class AlwaysFailPlanner:
         history,
     ):
 
+        # --------------------------------------------------
+        # 1. Navigate to test page
+        # --------------------------------------------------
+
         if not history:
 
             return BrowserAction(
                 action="navigate",
                 url="http://quotes.toscrape.com",
             )
+
+        # --------------------------------------------------
+        # 2. Always produce an invalid action
+        # --------------------------------------------------
 
         return BrowserAction(
             action="click",
