@@ -12,6 +12,8 @@ class PageElement(BaseModel):
     aria_label: str | None = None
     type: str | None = None
     value: str | None = None
+    href: str | None = None
+    role: str | None = None
 
 
 class BrowserState(BaseModel):

@@ -21,7 +21,7 @@ Your task is to choose EXACTLY ONE next browser action.
 
 Core strategy:
 
-OBSERVE -> PLAN -> EXECUTE -> VERIFY -> REPLAN
+OBSERVE -> PLAN -> EXECUTE -> RECORD RESULT -> REOBSERVE -> REPLAN
 
 Rules:
 
@@ -34,7 +34,8 @@ Rules:
   clearly requires it.
 - If an action failed, reconsider the strategy before trying again.
 - If an element ID from a previous state is no longer present, do not use it.
-- After navigation or page-changing actions, rely on the new browser state.
+- After every action, use the newly observed browser state and action history
+  to determine whether the goal has progressed, failed, or requires replanning.
 - Determine whether the goal has already been achieved before selecting
   another action.
 - If the goal has been achieved, return:

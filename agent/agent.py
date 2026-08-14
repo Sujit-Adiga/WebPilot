@@ -4,58 +4,38 @@ from agent.memory import ActionRecord
 
 class BrowserAgent:
 
-    def __init__(
-        self,
-        planner,
-        executor,
-        browser,
-        max_retries: int = 2
-    ):
+    def __init__(self, planner, executor, browser):
         self.planner = planner
         self.executor = executor
         self.browser = browser
-
         self.history: list[ActionRecord] = []
-
-        # Maximum number of consecutive failures allowed
-        self.max_retries = max_retries
 
     async def run(
         self,
         goal: str,
-        max_steps: int = 15
+        max_steps: int = 15,
+        max_retries: int = 3
     ):
 
         previous_action = None
         repeat_count = 0
-        consecutive_failures = 0
+        retry_count = 0
 
         for step in range(max_steps):
 
             print(f"\n--- Step {step + 1} ---")
 
-            # -------------------------------------------------
-            # 1. OBSERVE
-            # -------------------------------------------------
-
+            # 1. Inspect the current browser state
             state = await self.browser.inspect_page()
 
-            # -------------------------------------------------
-            # 2. PLAN
-            # -------------------------------------------------
-
+            # 2. Ask the planner for the next action
             action = self.planner.plan_next_action(
                 goal,
                 state,
                 self.history
             )
 
-            print(f"Action: {action}")
-
-            # -------------------------------------------------
-            # 3. DETECT REPETITION
-            # -------------------------------------------------
-
+            # 3. Detect repeated actions
             if action == previous_action:
                 repeat_count += 1
             else:
@@ -64,100 +44,96 @@ class BrowserAgent:
             previous_action = action
 
             if repeat_count >= 2:
-                print("Planner is repeating the same action.")
-
-                self.history.append(
-                    ActionRecord(
-                        action=action,
-                        result="failure",
-                        error="Repeated action detected"
-                    )
+                raise RuntimeError(
+                    "Agent appears to be repeating the same action."
                 )
 
-                # Give planner another chance with updated history
-                continue
+            print(f"Action: {action}")
 
-            # -------------------------------------------------
-            # 4. EXECUTE
-            # -------------------------------------------------
-
-            record = ActionRecord(action=action)
+            # 4. Record the action
+            record = ActionRecord(
+                action=action,
+                step=step + 1
+            )
 
             try:
 
+                # 5. Execute the action
                 result = await self.executor.execute(action)
 
-                record.result = (
-                    str(result)
-                    if result is not None
-                    else "success"
-                )
+                # 6. Record successful result
+                if isinstance(result, dict):
+                    record.result = result.get(
+                        "text",
+                        result.get("status")
+                    )
+                else:
+                    record.result = (
+                        str(result)
+                        if result is not None
+                        else "success"
+                    )
 
                 self.history.append(record)
 
-                print(f"Result: {record.result}")
+                print(f"Result: {result}")
 
-                # Successful action resets failure counter
-                consecutive_failures = 0
+                # 7. Successful action → reset retry counter
+                retry_count = 0
 
-                # -------------------------------------------------
-                # 5. GOAL COMPLETION
-                # -------------------------------------------------
-
-                if result == "DONE":
+                # 8. Check whether the agent has completed the goal
+                if (
+                    isinstance(result, dict)
+                    and result.get("status") == "DONE"
+                ):
+                    final_text = result.get("text")
 
                     print("Goal completed.")
 
                     return {
                         "success": True,
                         "steps": step + 1,
-                        "history": self.history
+                        "result": final_text,
+                        "history": self.history,
                     }
 
             except Exception as exc:
 
-                consecutive_failures += 1
-
+                # 9. Record the failed action
                 record.result = "failure"
                 record.error = str(exc)
 
                 self.history.append(record)
 
+                retry_count += 1
+
                 print(f"Action failed: {record.error}")
+                print(
+                    f"Retry {retry_count}/{max_retries}"
+                )
 
-                # -------------------------------------------------
-                # BOUNDED RETRIES
-                # -------------------------------------------------
+                # 10. Stop after bounded number of consecutive failures
+                if retry_count >= max_retries:
 
-                if consecutive_failures >= self.max_retries:
-
-                    print(
-                        f"Maximum retries ({self.max_retries}) "
-                        "reached."
-                    )
+                    print("Maximum retries exceeded.")
 
                     return {
                         "success": False,
                         "steps": step + 1,
+                        "result": None,
                         "history": self.history,
-                        "error": "Maximum retries exceeded"
+                        "error": "Maximum retries exceeded",
                     }
 
-                # -------------------------------------------------
-                # FAILURE REPLANNING
-                # -------------------------------------------------
-
-                print(
-                    "Replanning from updated browser state..."
-                )
-
+                # 11. Otherwise continue:
+                #     inspect → replan → execute
                 continue
 
-        print("Maximum number of steps reached.")
-
+        # 12. Maximum total steps reached
         return {
             "success": False,
             "steps": max_steps,
+            "result": None,
             "history": self.history,
-            "error": "Maximum steps exceeded"
+            "error": "Maximum steps reached",
         }

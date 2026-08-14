@@ -221,6 +221,16 @@ class BrowserController:
 
                         value = None
 
+                href = None
+
+                if tag == "a":
+                    href = await current.get_attribute("href")
+
+                role = None
+
+                if tag == "button":
+                    role = await current.get_attribute("role")
+
                 self.element_map[
                     element_id
                 ] = current
@@ -234,7 +244,9 @@ class BrowserController:
                         placeholder=placeholder,
                         aria_label=aria_label,
                         type=input_type,
-                        value=value
+                        value=value,
+                        href=href,
+                        role=role
                     )
                 )
 
