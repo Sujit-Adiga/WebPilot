@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 
 
 class PageElement(BaseModel):
-
     id: int
     tag: str
     text: str
@@ -17,9 +16,14 @@ class PageElement(BaseModel):
 
 
 class BrowserState(BaseModel):
-
     url: str
     title: str
+
+    # Visible textual content of the current page.
+    # This gives the planner semantic information beyond
+    # interactive elements.
+    page_text: str = ""
+
     elements: list[PageElement]
 
     visited_urls: list[str] = Field(

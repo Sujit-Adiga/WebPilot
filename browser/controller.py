@@ -14,6 +14,8 @@ class BrowserController:
         self.context = None
         self.page = None
 
+        # Maps temporary element IDs to Playwright locators.
+        # IDs are valid only for the current page snapshot.
         self.element_map: dict[int, Locator] = {}
 
         self.visited_urls: list[str] = []
@@ -65,8 +67,8 @@ class BrowserController:
 
         await page.goto(url)
 
-        if url not in self.visited_urls:
-            self.visited_urls.append(url)
+        if page.url not in self.visited_urls:
+            self.visited_urls.append(page.url)
 
         print(
             f"Navigated to {page.url}"
@@ -137,18 +139,58 @@ class BrowserController:
 
         page = self._require_page()
 
+        # -----------------------------------------------------
+        # 1. Extract visible page text
+        # -----------------------------------------------------
+
+        try:
+
+            page_text = await page.locator(
+                "body"
+            ).inner_text()
+
+            # Normalize whitespace while preserving
+            # useful line separation.
+            lines = [
+                line.strip()
+                for line in page_text.splitlines()
+                if line.strip()
+            ]
+
+            page_text = "\n".join(lines)
+
+            # Keep the planner prompt bounded.
+            # This prevents huge pages from consuming
+            # unnecessary LLM context.
+            page_text = page_text[:8000]
+
+        except Exception:
+
+            page_text = ""
+
+        # -----------------------------------------------------
+        # 2. Extract interactive elements
+        # -----------------------------------------------------
+
         locator = page.locator(
-            "button, input, textarea, select, "
-            "a[href], "
-            "[role='button'], "
-            "[role='link'], "
-            "[role='checkbox'], "
-            "[role='menuitem']"
+            """
+            button,
+            input,
+            textarea,
+            select,
+            a[href],
+            [role="button"],
+            [role="link"],
+            [role="checkbox"],
+            [role="menuitem"],
+            .quote,
+            .text
+            """
         )
 
         count = await locator.count()
 
-        # Element IDs are valid only for this snapshot
+        # Element IDs are valid only for this snapshot.
         self.element_map.clear()
 
         elements = []
@@ -165,7 +207,7 @@ class BrowserController:
                     "el => el.tagName.toLowerCase()"
                 )
 
-                # Ignore hidden inputs
+                # Ignore hidden inputs.
                 input_type = await current.get_attribute(
                     "type"
                 )
@@ -224,12 +266,14 @@ class BrowserController:
                 href = None
 
                 if tag == "a":
-                    href = await current.get_attribute("href")
 
-                role = None
+                    href = await current.get_attribute(
+                        "href"
+                    )
 
-                if tag == "button":
-                    role = await current.get_attribute("role")
+                role = await current.get_attribute(
+                    "role"
+                )
 
                 self.element_map[
                     element_id
@@ -254,13 +298,18 @@ class BrowserController:
 
             except Exception:
 
-                # Dynamic DOM changes should not
-                # crash page inspection.
+                # Dynamic DOM changes should not crash
+                # the entire inspection.
                 continue
+
+        # -----------------------------------------------------
+        # 3. Construct browser state
+        # -----------------------------------------------------
 
         return BrowserState(
             url=page.url,
             title=await page.title(),
+            page_text=page_text,
             elements=elements,
             visited_urls=self.visited_urls.copy()
         )

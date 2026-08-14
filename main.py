@@ -7,6 +7,8 @@ from agent.planner import Planner
 from browser.controller import BrowserController
 from browser.executor import ActionExecutor
 
+from agent.verifier import GoalVerifier
+
 
 def load_gemini_api_key() -> str:
     """
@@ -52,6 +54,7 @@ async def main():
         planner=planner,
         executor=executor,
         browser=browser,
+        verifier=GoalVerifier()
     )
 
     await browser.open()
@@ -61,8 +64,9 @@ async def main():
         result = await agent.run(
             "Go to quotes.toscrape.com and find the quote "
             "written by Albert Einstein. Extract the text of the quote.",
-            max_steps=15,
-            max_retries=2
+            max_steps=10,
+            max_retries=2,
+            max_planner_retries=1
         )
 
         print("\nFinal result:")
