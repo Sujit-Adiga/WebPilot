@@ -149,8 +149,6 @@ class BrowserController:
                 "body"
             ).inner_text()
 
-            # Normalize whitespace while preserving
-            # useful line separation.
             lines = [
                 line.strip()
                 for line in page_text.splitlines()
@@ -159,9 +157,7 @@ class BrowserController:
 
             page_text = "\n".join(lines)
 
-            # Keep the planner prompt bounded.
-            # This prevents huge pages from consuming
-            # unnecessary LLM context.
+            # Keep planner context bounded.
             page_text = page_text[:8000]
 
         except Exception:
@@ -169,7 +165,7 @@ class BrowserController:
             page_text = ""
 
         # -----------------------------------------------------
-        # 2. Extract interactive elements
+        # 2. Extract interactive + meaningful content elements
         # -----------------------------------------------------
 
         locator = page.locator(
@@ -184,18 +180,24 @@ class BrowserController:
             [role="checkbox"],
             [role="menuitem"],
             .quote,
-            .text
+            .text,
+            .author,
+            .tags,
+            article,
+            main,
+            section
             """
         )
 
         count = await locator.count()
 
-        # Element IDs are valid only for this snapshot.
+        # IDs are snapshot-local.
         self.element_map.clear()
 
         elements = []
-
         element_id = 0
+
+        seen_keys = set()
 
         for i in range(count):
 
@@ -203,11 +205,14 @@ class BrowserController:
 
             try:
 
+                # Skip invisible elements.
+                if not await current.is_visible():
+                    continue
+
                 tag = await current.evaluate(
                     "el => el.tagName.toLowerCase()"
                 )
 
-                # Ignore hidden inputs.
                 input_type = await current.get_attribute(
                     "type"
                 )
@@ -216,8 +221,8 @@ class BrowserController:
                     continue
 
                 text = (
-                    await current.text_content()
-                ) or ""
+                    await current.inner_text()
+                ).strip()
 
                 if not text:
 
@@ -226,6 +231,8 @@ class BrowserController:
                             "value"
                         )
                     ) or ""
+
+                text = text.strip()
 
                 placeholder = (
                     await current.get_attribute(
@@ -275,22 +282,34 @@ class BrowserController:
                     "role"
                 )
 
-                self.element_map[
-                    element_id
-                ] = current
+                # Avoid adding the same content repeatedly
+                # when selectors overlap.
+                dedupe_key = (
+                    tag,
+                    text,
+                    href,
+                    role,
+                )
+
+                if dedupe_key in seen_keys:
+                    continue
+
+                seen_keys.add(dedupe_key)
+
+                self.element_map[element_id] = current
 
                 elements.append(
                     PageElement(
                         id=element_id,
                         tag=tag,
-                        text=text.strip(),
+                        text=text[:1000],
                         name=name,
                         placeholder=placeholder,
                         aria_label=aria_label,
                         type=input_type,
                         value=value,
                         href=href,
-                        role=role
+                        role=role,
                     )
                 )
 
@@ -298,8 +317,7 @@ class BrowserController:
 
             except Exception:
 
-                # Dynamic DOM changes should not crash
-                # the entire inspection.
+                # Dynamic DOM changes should not crash inspection.
                 continue
 
         # -----------------------------------------------------
@@ -311,7 +329,7 @@ class BrowserController:
             title=await page.title(),
             page_text=page_text,
             elements=elements,
-            visited_urls=self.visited_urls.copy()
+            visited_urls=self.visited_urls.copy(),
         )
 
     # ---------------------------------------------------------
