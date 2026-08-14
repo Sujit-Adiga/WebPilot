@@ -1,13 +1,13 @@
 import argparse
 import asyncio
+import os
 import time
+from pathlib import Path
 
 from agent.agent import BrowserAgent
 from agent.planner import Planner
 from browser.controller import BrowserController
 from browser.executor import ActionExecutor
-import llm
-import llm
 from llm.groq_provider import GroqProvider
 
 
@@ -49,15 +49,46 @@ TASKS = [
 ]
 
 
+def load_groq_api_key() -> str:
+    """
+    Load Groq API key from environment or local .env file.
+    """
+
+    api_key = os.environ.get("GROQ_API_KEY")
+
+    if api_key:
+        return api_key
+
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+
+    if env_path.exists():
+
+        for line in env_path.read_text().splitlines():
+
+            line = line.strip()
+
+            if not line or line.startswith("#"):
+                continue
+
+            if line.startswith("GROQ_API_KEY="):
+                return line.split("=", 1)[1].strip()
+
+    raise RuntimeError(
+        "GROQ_API_KEY not found. "
+        "Set it in the environment or .env file."
+    )
+
+
 def parse_args():
+
     parser = argparse.ArgumentParser(
-        description="Run WebPilot benchmark tasks."
+        description="Run WebPilot LLM benchmark tasks."
     )
 
     parser.add_argument(
         "--task",
         type=int,
-        help="Run only the specified task number (1-based).",
+        help="Run only one task (1-based index)."
     )
 
     return parser.parse_args()
@@ -69,6 +100,7 @@ async def run_task(task, api_key):
     print("-" * 60)
 
     browser = BrowserController()
+
     llm = GroqProvider(
         api_key=api_key,
         model="openai/gpt-oss-20b",
@@ -77,21 +109,21 @@ async def run_task(task, api_key):
     planner = Planner(
         llm=llm,
     )
-    planner = Planner(llm)
+
     executor = ActionExecutor(browser)
-    verifier = None
 
     agent = BrowserAgent(
         planner=planner,
         executor=executor,
         browser=browser,
-        verifier=verifier,
+        verifier=None,
         max_retries=2,
     )
 
     start = time.perf_counter()
 
     try:
+
         await browser.open()
 
         result = await agent.run(
@@ -107,6 +139,11 @@ async def run_task(task, api_key):
             "time": elapsed,
             "result": result.get("result"),
             "history": result.get("history", []),
+            "failures": result.get("failures", 0),
+            "retries": result.get("retries", 0),
+            "replans": result.get("replans", 0),
+            "verification": result.get("verification", False),
+            "failure_type": result.get("failure_type"),
         }
 
     except Exception as exc:
@@ -121,9 +158,15 @@ async def run_task(task, api_key):
             "result": None,
             "error": str(exc),
             "history": [],
+            "failures": 0,
+            "retries": 0,
+            "replans": 0,
+            "verification": False,
+            "failure_type": "llm_error",
         }
 
     finally:
+
         await browser.close()
 
 
@@ -131,7 +174,7 @@ async def main():
 
     args = parse_args()
 
-    api_key = load_gemini_api_key()
+    api_key = load_groq_api_key()
 
     if args.task is not None:
 
@@ -143,10 +186,11 @@ async def main():
         tasks = [TASKS[args.task - 1]]
 
     else:
+
         tasks = TASKS
 
     print("=" * 60)
-    print("WebPilot Benchmark")
+    print("WebPilot LLM Benchmark")
     print("=" * 60)
 
     results = []
@@ -175,39 +219,84 @@ async def main():
                 )
 
         print(
-            f"  Steps: {result['steps']}"
+            f"  Steps:    {result['steps']}"
         )
 
         print(
-            f"  Time: {result['time']:.2f}s"
+            f"  Failures: {result['failures']}"
+        )
+
+        print(
+            f"  Retries:  {result['retries']}"
+        )
+
+        print(
+            f"  Replans:  {result['replans']}"
+        )
+
+        print(
+            f"  Time:     {result['time']:.2f}s"
         )
 
     print("\n" + "=" * 60)
-    print("BENCHMARK RESULTS")
+    print("LLM BENCHMARK RESULTS")
     print("=" * 60)
-
-    successful = sum(
-        r["success"] for r in results
-    )
 
     total = len(results)
 
-    print(
-        f"Total tasks:        {total}"
+    successful = sum(
+        r["success"]
+        for r in results
     )
 
-    print(
-        f"Successful tasks:   {successful}"
+    total_failures = sum(
+        r["failures"]
+        for r in results
     )
 
-    print(
-        f"Failed tasks:       {total - successful}"
+    total_retries = sum(
+        r["retries"]
+        for r in results
     )
 
-    print(
-        f"Completion rate:    "
-        f"{successful / total * 100:.1f}%"
+    total_replans = sum(
+        r["replans"]
+        for r in results
     )
+
+    verified = sum(
+        r["verification"]
+        for r in results
+    )
+
+    average_steps = (
+        sum(r["steps"] for r in results) / total
+        if total
+        else 0
+    )
+
+    average_time = (
+        sum(r["time"] for r in results) / total
+        if total
+        else 0
+    )
+
+    completion_rate = (
+        successful / total * 100
+        if total
+        else 0
+    )
+
+    print(f"Total tasks:        {total}")
+    print(f"Successful tasks:   {successful}")
+    print(f"Failed tasks:       {total - successful}")
+    print(f"Completion rate:    {completion_rate:.1f}%")
+    print(f"Verified tasks:     {verified}")
+    print(f"Total failures:     {total_failures}")
+    print(f"Total retries:      {total_retries}")
+    print(f"Total replans:      {total_replans}")
+    print(f"Average steps:      {average_steps:.2f}")
+    print(f"Average time:       {average_time:.2f}s")
 
     print("\nPer-task results:")
 
@@ -223,36 +312,10 @@ async def main():
             f"{status} | "
             f"{result['name']:<30} | "
             f"{result['steps']:2d} steps | "
+            f"{result['failures']} failures | "
+            f"{result['retries']} retries | "
             f"{result['time']:.2f}s"
         )
-
-
-def load_gemini_api_key() -> str:
-    import os
-    from pathlib import Path
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-
-    if api_key:
-        return api_key
-
-    env_path = Path(__file__).resolve().parents[1] / ".env"
-
-    if env_path.exists():
-
-        for line in env_path.read_text().splitlines():
-
-            line = line.strip()
-
-            if not line or line.startswith("#"):
-                continue
-
-            if line.startswith("GEMINI_API_KEY="):
-                return line.split("=", 1)[1].strip()
-
-    raise RuntimeError(
-        "GEMINI_API_KEY not found."
-    )
 
 
 if __name__ == "__main__":

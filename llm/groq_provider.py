@@ -35,14 +35,10 @@ class GroqProvider(LLMProvider):
                 },
             ],
             response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "browser_action",
-                    "strict": True,
-                    "schema": response_schema,
-                },
+                "type": "json_object"
             },
             temperature=0,
+            reasoning_effort="low",
         )
 
         content = response.choices[0].message.content
