@@ -9,14 +9,6 @@ class GoalVerifier:
         state: BrowserState,
         result: str | None = None,
     ) -> bool:
-        """
-        Verify whether the observed browser state and latest result
-        provide sufficient evidence that the goal has been completed.
-
-        This is intentionally conservative:
-        - A non-empty extraction result can satisfy extraction goals.
-        - Otherwise, the agent should continue planning.
-        """
 
         if result is None:
             return False
@@ -26,17 +18,32 @@ class GoalVerifier:
         if not result:
             return False
 
+        goal_lower = goal.lower()
+
+        # --------------------------------------------------
+        # Extraction-style goals
+        # --------------------------------------------------
+
         extraction_keywords = [
             "extract",
-            "find",
             "quote",
             "text",
             "written by",
         ]
 
-        goal_lower = goal.lower()
+        if any(
+            keyword in goal_lower
+            for keyword in extraction_keywords
+        ):
 
-        if any(keyword in goal_lower for keyword in extraction_keywords):
+            return True
+
+        # --------------------------------------------------
+        # Navigation-style goals
+        # --------------------------------------------------
+
+        if "navigate" in goal_lower:
+
             return True
 
         return False

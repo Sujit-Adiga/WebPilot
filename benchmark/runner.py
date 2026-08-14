@@ -68,11 +68,13 @@ async def run_task(task, api_key):
     browser = BrowserController()
     planner = Planner(api_key)
     executor = ActionExecutor(browser)
+    verifier = None
 
     agent = BrowserAgent(
         planner=planner,
         executor=executor,
         browser=browser,
+        verifier=verifier,
         max_retries=2,
     )
 

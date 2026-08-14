@@ -9,29 +9,34 @@ class BrowserAgent:
         planner,
         executor,
         browser,
-        max_retries: int = 2,
+        verifier,
+        max_retries: int = 2
     ):
         self.planner = planner
         self.executor = executor
         self.browser = browser
         self.max_retries = max_retries
+        self.verifier = verifier
 
         self.history: list[ActionRecord] = []
 
     async def run(
         self,
         goal: str,
-        max_steps: int = 15,
+        max_steps: int = 15
     ):
 
-        self.history = []
-
         previous_action = None
+
+        # Counts repeated successful actions.
+        # Failed actions are handled separately as retries.
         repeat_count = 0
 
-        total_failures = 0
-        total_retries = 0
-        verification_passed = False
+        # Whether the immediately preceding action failed.
+        last_action_failed = False
+
+        # Number of retries caused by action failures.
+        retry_count = 0
 
         for step in range(max_steps):
 
@@ -50,14 +55,17 @@ class BrowserAgent:
             action = self.planner.plan_next_action(
                 goal,
                 state,
-                self.history,
+                self.history
             )
 
             # --------------------------------------------------
-            # 3. Detect repeated actions
+            # 3. Detect repeated successful actions
             # --------------------------------------------------
 
-            if action == previous_action:
+            if (
+                action == previous_action
+                and not last_action_failed
+            ):
                 repeat_count += 1
             else:
                 repeat_count = 0
@@ -65,9 +73,26 @@ class BrowserAgent:
             previous_action = action
 
             if repeat_count >= 2:
-                raise RuntimeError(
-                    "Agent appears to be repeating the same action."
+                print(
+                    "Agent appears to be repeating "
+                    "the same successful action."
                 )
+
+                return {
+                    "success": False,
+                    "steps": step + 1,
+                    "result": None,
+                    "history": self.history,
+                    "failure_type": "repeated_action",
+                    "failures": sum(
+                        1
+                        for record in self.history
+                        if record.result == "failure"
+                    ),
+                    "retries": retry_count,
+                    "replans": retry_count,
+                    "verification": False,
+                }
 
             print(f"Action: {action}")
 
@@ -77,7 +102,7 @@ class BrowserAgent:
 
             record = ActionRecord(
                 action=action,
-                step=step + 1,
+                step=step + 1
             )
 
             # --------------------------------------------------
@@ -88,12 +113,18 @@ class BrowserAgent:
 
                 result = await self.executor.execute(action)
 
-                # Store successful result
+                # This action succeeded.
+                last_action_failed = False
+
+                # --------------------------------------------------
+                # 6. Store successful result
+                # --------------------------------------------------
+
                 if isinstance(result, dict):
 
                     record.result = result.get(
                         "text",
-                        result.get("status"),
+                        result.get("status")
                     )
 
                 else:
@@ -109,7 +140,7 @@ class BrowserAgent:
                 print(f"Result: {result}")
 
                 # --------------------------------------------------
-                # 6. Handle DONE
+                # 7. Handle successful completion
                 # --------------------------------------------------
 
                 if (
@@ -117,37 +148,35 @@ class BrowserAgent:
                     and result.get("status") == "DONE"
                 ):
 
-                    verification_passed = result.get(
-                        "verification",
-                        False,
-                    )
-
-                    if verification_passed:
-                        print("Verification: PASSED")
-                    else:
-                        print("Verification: NOT CONFIRMED")
+                    final_text = result.get("text")
 
                     print("Goal completed.")
 
                     return {
                         "success": True,
                         "steps": step + 1,
-                        "result": result.get("text"),
+                        "result": final_text,
                         "history": self.history,
-                        "failures": total_failures,
-                        "retries": total_retries,
-                        "replans": total_retries,
-                        "verification_passed": verification_passed,
+                        "failure_type": None,
+                        "failures": sum(
+                            1
+                            for record in self.history
+                            if record.result == "failure"
+                        ),
+                        "retries": retry_count,
+                        "replans": retry_count,
+                        "verification": True,
                     }
+
+            # --------------------------------------------------
+            # 8. Handle action failure
+            # --------------------------------------------------
 
             except Exception as exc:
 
-                # --------------------------------------------------
-                # 7. Record failure
-                # --------------------------------------------------
+                last_action_failed = True
 
-                total_failures += 1
-                total_retries += 1
+                retry_count += 1
 
                 record.result = "failure"
                 record.error = str(exc)
@@ -159,13 +188,13 @@ class BrowserAgent:
                 )
 
                 # --------------------------------------------------
-                # 8. Enforce retry bound
+                # 9. Enforce bounded retries
                 # --------------------------------------------------
 
-                if total_retries > self.max_retries:
+                if retry_count > self.max_retries:
 
                     print(
-                        "Maximum retries exceeded."
+                        "Maximum retries reached."
                     )
 
                     return {
@@ -173,24 +202,15 @@ class BrowserAgent:
                         "steps": step + 1,
                         "result": None,
                         "history": self.history,
-                        "failures": total_failures,
-                        "retries": total_retries,
-                        "replans": total_retries - 1,
-                        "verification_passed": False,
+                        "failure_type": "max_retries",
+                        "failures": retry_count,
+                        "retries": self.max_retries,
+                        "replans": self.max_retries,
+                        "verification": False,
                     }
 
                 # --------------------------------------------------
-                # 9. Continue loop
-                #
-                # The next iteration will:
-                #
-                # inspect state
-                #      ↓
-                # planner sees history
-                #      ↓
-                # chooses new action
-                #
-                # This is the replanning loop.
+                # 10. Replan after failure
                 # --------------------------------------------------
 
                 print(
@@ -199,17 +219,26 @@ class BrowserAgent:
 
                 continue
 
-        # ------------------------------------------------------
-        # Maximum steps reached
-        # ------------------------------------------------------
+        # --------------------------------------------------
+        # Maximum execution steps reached
+        # --------------------------------------------------
+
+        print(
+            "Maximum number of steps reached."
+        )
 
         return {
             "success": False,
             "steps": max_steps,
             "result": None,
             "history": self.history,
-            "failures": total_failures,
-            "retries": total_retries,
-            "replans": total_retries,
-            "verification_passed": verification_passed,
+            "failure_type": "max_steps",
+            "failures": sum(
+                1
+                for record in self.history
+                if record.result == "failure"
+            ),
+            "retries": retry_count,
+            "replans": retry_count,
+            "verification": False,
         }
