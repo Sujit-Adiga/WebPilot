@@ -3,7 +3,12 @@ from browser.actions import BrowserAction
 
 class DeterministicPlanner:
 
-    def __init__(self, failure_mode=None):
+    def __init__(
+        self,
+        target_author="Albert Einstein",
+        failure_mode=None,
+    ):
+        self.target_author = target_author
         self.failure_mode = failure_mode
         self.failed_once = False
 
@@ -59,12 +64,41 @@ class DeterministicPlanner:
                 )
 
         # --------------------------------------------------
-        # 4. Find Einstein quote element
+        # 4. Handle navigation task
+        # --------------------------------------------------
+
+        if "navigate to the login page" in goal.lower():
+
+            for element in state.elements:
+
+                element_text = (
+                    element.text or ""
+                ).lower()
+
+                if "login" in element_text:
+
+                    return BrowserAction(
+                        action="click",
+                        element_id=element.id,
+                    )
+
+            # If already on login page
+            if "login" in state.page_text.lower():
+
+                return BrowserAction(
+                    action="done",
+                    text="Login",
+                )
+
+        # --------------------------------------------------
+        # 5. Find target quote
         # --------------------------------------------------
 
         for element in state.elements:
 
-            if "Einstein" in element.text:
+            element_text = element.text or ""
+
+            if self.target_author.lower() in element_text.lower():
 
                 return BrowserAction(
                     action="extract_text",
@@ -72,7 +106,24 @@ class DeterministicPlanner:
                 )
 
         # --------------------------------------------------
-        # 5. Fallback
+        # 6. Handle first-quote / tags task
+        # --------------------------------------------------
+
+        if "tags associated with the first quote" in goal.lower():
+
+            for element in state.elements:
+
+                element_text = element.text or ""
+
+                if "Tags" in element_text:
+
+                    return BrowserAction(
+                        action="extract_text",
+                        element_id=element.id,
+                    )
+
+        # --------------------------------------------------
+        # 7. Fallback
         # --------------------------------------------------
 
         return BrowserAction(

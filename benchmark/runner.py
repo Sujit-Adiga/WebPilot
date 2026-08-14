@@ -6,6 +6,9 @@ from agent.agent import BrowserAgent
 from agent.planner import Planner
 from browser.controller import BrowserController
 from browser.executor import ActionExecutor
+import llm
+import llm
+from llm.groq_provider import GroqProvider
 
 
 TASKS = [
@@ -66,7 +69,15 @@ async def run_task(task, api_key):
     print("-" * 60)
 
     browser = BrowserController()
-    planner = Planner(api_key)
+    llm = GroqProvider(
+        api_key=api_key,
+        model="openai/gpt-oss-20b",
+    )
+
+    planner = Planner(
+        llm=llm,
+    )
+    planner = Planner(llm)
     executor = ActionExecutor(browser)
     verifier = None
 

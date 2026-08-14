@@ -6,21 +6,17 @@ from agent.agent import BrowserAgent
 from agent.planner import Planner
 from browser.controller import BrowserController
 from browser.executor import ActionExecutor
+from llm.groq_provider import GroqProvider
 
-from agent.verifier import GoalVerifier
 
+def load_groq_api_key() -> str:
 
-def load_gemini_api_key() -> str:
-    """
-    Load Gemini API key from environment or local .env file.
-    """
-
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
 
     if api_key:
         return api_key
 
-    env_path = Path(__file__).parent / ".env"
+    env_path = Path(__file__).resolve().parent / ".env"
 
     if env_path.exists():
 
@@ -31,22 +27,28 @@ def load_gemini_api_key() -> str:
             if not line or line.startswith("#"):
                 continue
 
-            if line.startswith("GEMINI_API_KEY="):
+            if line.startswith("GROQ_API_KEY="):
                 return line.split("=", 1)[1].strip()
 
     raise RuntimeError(
-        "GEMINI_API_KEY not found. "
-        "Set it in the environment or .env file."
+        "GROQ_API_KEY not found."
     )
 
 
 async def main():
 
-    api_key = load_gemini_api_key()
+    api_key = load_groq_api_key()
+
+    llm = GroqProvider(
+        api_key=api_key,
+        model="openai/gpt-oss-20b",
+    )
 
     browser = BrowserController()
 
-    planner = Planner(api_key)
+    planner = Planner(
+        llm=llm,
+    )
 
     executor = ActionExecutor(browser)
 
@@ -54,7 +56,8 @@ async def main():
         planner=planner,
         executor=executor,
         browser=browser,
-        verifier=GoalVerifier()
+        verifier=None,
+        max_retries=2,
     )
 
     await browser.open()
@@ -63,14 +66,12 @@ async def main():
 
         result = await agent.run(
             "Go to quotes.toscrape.com and find the quote "
-            "written by Albert Einstein. Extract the text of the quote.",
-            max_steps=10,
-            max_retries=2,
-            max_planner_retries=1
+            "written by Albert Einstein. Extract the text "
+            "of the quote."
         )
 
         print("\nFinal result:")
-        print(result["result"])
+        print(result.get("result"))
 
     finally:
 
