@@ -1,54 +1,49 @@
 import asyncio
+
 from agent.agent import BrowserAgent
 from agent.planner import Planner
 from browser.controller import BrowserController
 from browser.executor import ActionExecutor
-import os
-from pathlib import Path
 
 
-def load_gemini_api_key() -> str:
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if api_key:
-        return api_key
-
-    env_path = Path(__file__).parent / ".env"
-    if env_path.exists():
-        with env_path.open() as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.startswith("GEMINI_API_KEY="):
-                    return line.split("=", 1)[1].strip()
-
-    raise EnvironmentError(
-        "GEMINI_API_KEY is not set. Add it to your environment or to a .env file in the project root."
-    )
+API_KEY = "YOUR_GEMINI_API_KEY"
 
 
 async def main():
 
     browser = BrowserController()
 
-    planner = Planner(load_gemini_api_key())
+    planner = Planner(API_KEY)
 
-    executor = ActionExecutor(browser)
+    executor = ActionExecutor(
+        browser
+    )
 
     agent = BrowserAgent(
-        planner,
-        executor,
-        browser
+        planner=planner,
+        executor=executor,
+        browser=browser,
+        max_retries=2
     )
 
     await browser.open()
 
     try:
-        await agent.run(
-            "Go to quotes.toscrape.com and find the quote "
-            "written by Albert Einstein. Extract the text of the quote."
+
+        result = await agent.run(
+            goal=(
+                "Go to quotes.toscrape.com "
+                "and extract the quote written "
+                "by Albert Einstein."
+            ),
+            max_steps=10
         )
+
+        print("\nFinal result:")
+        print(result)
+
     finally:
+
         await browser.close()
 
 

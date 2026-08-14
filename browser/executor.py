@@ -8,6 +8,8 @@ class ActionExecutor:
         self.controller = controller
 
     def validate(self, action: BrowserAction):
+
+        # Actions that require an element
         if action.action in {
             "click",
             "fill",
@@ -15,59 +17,154 @@ class ActionExecutor:
             "wait",
             "press"
         }:
+
             if action.element_id is None:
                 raise ValueError(
                     f"Element ID required for {action.action}"
                 )
 
-            if not self.controller.has_element(action.element_id):
+            if not self.controller.has_element(
+                action.element_id
+            ):
                 raise ValueError(
-                    f"Invalid element ID: {action.element_id}"
+                    f"Invalid element ID: "
+                    f"{action.element_id}"
                 )
 
-    async def execute(self, action: BrowserAction):
+        # Navigate validation
+        if action.action == "navigate":
+
+            if not action.url:
+                raise ValueError(
+                    "URL must be provided for navigate action."
+                )
+
+        # Fill validation
+        if action.action == "fill":
+
+            if action.text is None:
+                raise ValueError(
+                    "Text must be provided for fill action."
+                )
+
+        # Press validation
+        if action.action == "press":
+
+            if not action.key:
+                raise ValueError(
+                    "Key must be provided for press action."
+                )
+
+    async def execute(
+        self,
+        action: BrowserAction
+    ):
+
+        # Always validate before execution
         self.validate(action)
 
         if action.action == "navigate":
-            if action.url is None:
-                raise ValueError("URL must be provided for navigate action.")
-            await self.controller.goto(action.url)
 
-        elif action.action == "click":
-            if action.element_id is None:
-                raise ValueError("Element ID must be provided for click action.")
-            await self.controller.click(action.element_id)
-
-        elif action.action == "fill":
-            if action.element_id is None or action.text is None:
-                raise ValueError("Element ID and text must be provided for fill action.")
-            await self.controller.fill(action.element_id, action.text)
-
-        elif action.action == "extract_text":
-            if action.element_id is None:
-                raise ValueError("Element ID must be provided for extract_text action.")
-            return await self.controller.extract_text(action.element_id)
-
-        elif action.action == "wait":
-            if action.element_id is None:
-                raise ValueError("Element ID must be provided for wait action.")
-            await self.controller.wait(action.element_id)
-
-        elif action.action == "press":
-            if action.element_id is None:
+            url = action.url
+            if url is None:
                 raise ValueError(
-                    "Element ID must be provided for press action."
+                    "URL must be provided for navigate action."
                 )
 
-            if action.key is None:
+            await self.controller.goto(
+                url
+            )
+
+            return "success"
+
+        elif action.action == "click":
+
+            element_id = action.element_id
+            if element_id is None:
+                raise ValueError(
+                    "Element ID required for click action."
+                )
+
+            await self.controller.click(
+                element_id
+            )
+
+            return "success"
+
+        elif action.action == "fill":
+
+            element_id = action.element_id
+            if element_id is None:
+                raise ValueError(
+                    "Element ID required for fill action."
+                )
+
+            text = action.text
+            if text is None:
+                raise ValueError(
+                    "Text must be provided for fill action."
+                )
+
+            await self.controller.fill(
+                element_id,
+                text
+            )
+
+            return "success"
+
+        elif action.action == "extract_text":
+
+            element_id = action.element_id
+            if element_id is None:
+                raise ValueError(
+                    "Element ID required for extract_text action."
+                )
+
+            return await self.controller.extract_text(
+                element_id
+            )
+
+        elif action.action == "wait":
+
+            element_id = action.element_id
+            if element_id is None:
+                raise ValueError(
+                    "Element ID required for wait action."
+                )
+
+            await self.controller.wait(
+                element_id
+            )
+
+            return "success"
+
+        elif action.action == "press":
+
+            element_id = action.element_id
+            if element_id is None:
+                raise ValueError(
+                    "Element ID required for press action."
+                )
+
+            key = action.key
+            if key is None:
                 raise ValueError(
                     "Key must be provided for press action."
                 )
 
             await self.controller.press(
-                action.element_id,
-                action.key
+                element_id,
+                key
             )
 
+            return "success"
+
         elif action.action == "done":
+
             return "DONE"
+
+        else:
+
+            raise ValueError(
+                f"Unknown action: {action.action}"
+            )
