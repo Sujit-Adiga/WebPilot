@@ -1,4 +1,4 @@
-# WebPilot
+# BrowserPilot
 
 LLM-driven browser automation agent using Gemini and Playwright.
 
