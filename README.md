@@ -24,8 +24,8 @@ Replanning
 
 ### 1. Clone
 
-git clone https://github.com/Sujit-Adiga/WebPilot.git
-cd WebPilot
+git clone https://github.com/Sujit-Adiga/BrowserPilot.git
+cd BrowserPilot
 
 ### 2. Install dependencies
 
